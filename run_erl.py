@@ -7,6 +7,7 @@ from core import ddpg as ddpg
 import argparse
 
 
+
 render = False
 parser = argparse.ArgumentParser()
 parser.add_argument('-env', help='Environment Choices: (HalfCheetah-v2) (Ant-v2) (Reacher-v2) (Walker2d-v2) (Swimmer-v2) (Hopper-v2)', required=True)
@@ -23,7 +24,8 @@ class Parameters:
         else: self.num_frames = 2000000
 
         #USE CUDA
-        self.is_cuda = True; self.is_memory_cuda = True
+        #self.is_cuda = True; self.is_memory_cuda = True
+        self.is_cuda = False; self.is_memory_cuda = False #STB
 
         #Sunchronization Period
         if env_tag == 'Hopper-v2' or env_tag == 'Ant-v2': self.synch_period = 1
@@ -176,7 +178,7 @@ if __name__ == "__main__":
     parameters.state_dim = env.observation_space.shape[0]
 
     #Seed
-    env.seed(parameters.seed);
+    #env.seed(parameters.seed);
     torch.manual_seed(parameters.seed); np.random.seed(parameters.seed); random.seed(parameters.seed)
 
     #Create Agent
