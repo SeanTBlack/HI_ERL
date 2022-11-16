@@ -126,6 +126,7 @@ class NormalizedActions(gym.ActionWrapper):
 
     def action(self, action):
         if len(action > 1):
+            #print(action)
             return self.interpret_action(action)
         else:
             action = (action + 1) / 2  # [-1, 1] => [0, 1]
@@ -151,6 +152,11 @@ class NormalizedActions(gym.ActionWrapper):
         #print(len(actions))
         best_ind = np.argmax(actions)
         #print(best_ind)
+        
+        if actions[best_ind] == -2: 
+            print(actions)
+            print(best_ind)
+        
         if best_ind == len(actions)-1:
             out = None
         else:

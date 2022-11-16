@@ -1,7 +1,7 @@
 import random
 import numpy as np
 from scipy.special import expit
-import fastrand, math
+import math
 
 
 #Neuroevolution SSNE
@@ -25,7 +25,7 @@ class SSNE:
 
         offsprings = list(set(offsprings))  # Find unique offsprings
         if len(offsprings) % 2 != 0:  # Number of offsprings should be even
-            offsprings.append(offsprings[fastrand.pcg32bounded(len(offsprings))])
+            offsprings.append(offsprings[random.randint(0,len(offsprings)-1)])
         return offsprings
 
     def list_argsort(self, seq):
@@ -46,27 +46,30 @@ class SSNE:
             if len(W1.shape) == 2: #Weights no bias
                 num_variables = W1.shape[0]
                 # Crossover opertation [Indexed by row]
-                num_cross_overs = fastrand.pcg32bounded(num_variables * 2)  # Lower bounded on full swaps
+                num_cross_overs = random.randint(0,(num_variables * 2)-1)  # Lower bounded on full swaps
                 for i in range(num_cross_overs):
                     receiver_choice = random.random()  # Choose which gene to receive the perturbation
                     if receiver_choice < 0.5:
-                        ind_cr = fastrand.pcg32bounded(W1.shape[0])  #
+                        ind_cr = random.randint(0,W1.shape[0]-1)  #
                         W1[ind_cr, :] = W2[ind_cr, :]
                     else:
-                        ind_cr = fastrand.pcg32bounded(W1.shape[0])  #
+                        ind_cr = random.randint(0,W1.shape[0]-1)  #
                         W2[ind_cr, :] = W1[ind_cr, :]
 
             elif len(W1.shape) == 1: #Bias
                 num_variables = W1.shape[0]
                 # Crossover opertation [Indexed by row]
-                num_cross_overs = fastrand.pcg32bounded(num_variables)  # Lower bounded on full swaps
+                num_cross_overs = random.randint(0,num_variables-1)  # Lower bounded on full swaps
                 for i in range(num_cross_overs):
                     receiver_choice = random.random()  # Choose which gene to receive the perturbation
                     if receiver_choice < 0.5:
-                        ind_cr = fastrand.pcg32bounded(W1.shape[0])  #
+                        ind_cr = random.randint(0,W1.shape[0]-1)  #
                         W1[ind_cr] = W2[ind_cr]
                     else:
-                        ind_cr = fastrand.pcg32bounded(W1.shape[0])  #
+                        ind_cr = random.randint(0,W1.shape[0]-1)  #
+                        #print(W1)
+                        #print(W1.shape)
+                        #print(ind_cr)
                         W2[ind_cr] = W1[ind_cr]
 
 
@@ -93,10 +96,10 @@ class SSNE:
                 ssne_prob = ssne_probabilities[i]
 
                 if random.random() < ssne_prob:
-                    num_mutations = fastrand.pcg32bounded(int(math.ceil(num_mutation_frac * num_weights)))  # Number of mutation instances
+                    num_mutations = random.randint(0,int(math.ceil(num_mutation_frac * num_weights))-1)  # Number of mutation instances
                     for _ in range(num_mutations):
-                        ind_dim1 = fastrand.pcg32bounded(W.shape[0])
-                        ind_dim2 = fastrand.pcg32bounded(W.shape[-1])
+                        ind_dim1 = random.randint(0,W.shape[0]-1)
+                        ind_dim2 = random.randint(0,W.shape[-1]-1)
                         random_num = random.random()
 
                         if random_num < super_mut_prob:  # Super Mutation probability
@@ -156,7 +159,7 @@ class SSNE:
 
         # Crossover for unselected genes with 100 percent probability
         if len(unselects) % 2 != 0:  # Number of unselects left should be even
-            unselects.append(unselects[fastrand.pcg32bounded(len(unselects))])
+            unselects.append(unselects[random.randint(0,len(unselects)-1)])
         for i, j in zip(unselects[0::2], unselects[1::2]):
             off_i = random.choice(new_elitists);
             off_j = random.choice(offsprings)
