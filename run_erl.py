@@ -5,13 +5,52 @@ import gym, torch
 from core import replay_memory
 from core import ddpg as ddpg
 import argparse
-
+import copy
+from itertools import chain
+#import gym_go #stb - Not sure if this is needed
 
 
 render = False
 parser = argparse.ArgumentParser()
-parser.add_argument('-env', help='Environment Choices: (HalfCheetah-v2) (Ant-v2) (Reacher-v2) (Walker2d-v2) (Swimmer-v2) (Hopper-v2)', required=True)
+parser.add_argument('-env', help='Environment Choices: (HalfCheetah-v2) (Ant-v2) (Reacher-v2) (Walker2d-v2) (Swimmer-v2) (Hopper-v2) (gym_go)', required=True)
 env_tag = vars(parser.parse_args())['env']
+
+def mod_state(state):
+
+    #print("mod_state: \n", state)
+    black_state = state[0]
+    #print(black_state)
+    black_list = list(chain.from_iterable(black_state))
+
+    white_state = state[1]
+    #print(white_state)
+    white_list = list(chain.from_iterable(white_state))
+
+    inv_states = state[3]
+    #print(inv_states)
+    inv_list = list(chain.from_iterable(inv_states))
+
+    opp_passed = state[4][0][0]
+
+    return np.array(black_list + white_list + inv_list + [opp_passed])
+
+def filter_actions(action, invalid):
+    #print("filtering")
+    #print(len(action[0]))
+    invalid = list(chain.from_iterable(invalid))
+    # invalid = [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] #STB: Testing the filter
+    action = action.tolist()[0]
+    #print(len(action))
+    #print("filtering\n", invalid)
+    #action = [-1 if invalid[i] == 1 else action[i] ]
+    for i in range(len(action)-1):
+        if invalid[i] == 1:
+            action[i] = -1
+        
+    #print(action)
+    #print(len(action))
+    
+    return np.array([action])
 
 
 class Parameters:
@@ -21,6 +60,7 @@ class Parameters:
         if env_tag == 'Hopper-v2': self.num_frames = 4000000
         elif env_tag == 'Ant-v2': self.num_frames = 6000000
         elif env_tag == 'Walker2d-v2': self.num_frames = 8000000
+        elif env_tag ==  'gym-go': self.num_frames = 10000
         else: self.num_frames = 2000000
 
         #USE CUDA
@@ -77,7 +117,7 @@ class Agent:
         #Init RL Agent
         self.rl_agent = ddpg.DDPG(args)
         self.replay_buffer = replay_memory.ReplayMemory(args.buffer_size)
-        self.ounoise = ddpg.OUNoise(args.action_dim)
+        self.ounoise = ddpg.OUNoise(args.action_dim, env_tag=env_tag)
 
         #Trackers
         self.num_games = 0; self.num_frames = 0; self.gen_frames = None
@@ -95,28 +135,82 @@ class Agent:
     def evaluate(self, net, is_render, is_action_noise=False, store_transition=True):
         total_reward = 0.0
 
-        state = self.env.reset()
+        #print("evaluate")
+
+        #save_state = self.env.reset()
+        #state = self.env.reset()
+        full_state = self.env.reset()
+        if env_tag == 'gym-go':     #STB: flatten state for go board
+            #state = mod_state(save_state)
+            #state = mod_state(state)
+            state = mod_state(np.array(full_state))
+        else:
+            state = full_state
+            pass
+
         state = utils.to_tensor(state).unsqueeze(0)
+        #print(state)
         if self.args.is_cuda: state = state.cuda()
         done = False
 
         while not done:
             if store_transition: self.num_frames += 1; self.gen_frames += 1
             if render and is_render: self.env.render()
+    
             action = net.forward(state)
-            action.clamp(-1,1)
+            action.clamp(-1,1)            
             action = utils.to_numpy(action.cpu())
+            
             if is_action_noise: action += self.ounoise.noise()
+            #print("save", save_state)
+            if env_tag == 'gym-go': 
+                #action = filter_actions(action, save_state[3]) #STB: Filtering invalid moves will save time in training
+                #action = filter_actions(action, state[3]) #STB: Filtering invalid moves will save time in training
+                action = filter_actions(action, full_state[3]) #STB: Filtering invalid moves will save time in training
+            #print("action", action)
+            #print(type(action))
+            
 
             next_state, reward, done, info = self.env.step(action.flatten())  #Simulate one step in environment
+            
+            
+            #print("done?", save_state[5])
+            #print("\n")
+            save_next_state = copy.deepcopy(next_state)
             next_state = utils.to_tensor(next_state).unsqueeze(0)
             if self.args.is_cuda:
                 next_state = next_state.cuda()
             total_reward += reward
 
-            if store_transition: self.add_experience(state, action, next_state, reward, done)
-            state = next_state
+            save_next_state = utils.to_tensor(mod_state(save_next_state))
+            #print(save_next_state)
+
+            #if store_transition: self.add_experience(save_state, action, next_state, reward, done)
+            #if store_transition: self.add_experience(state, action, next_state, reward, done)
+            if store_transition: self.add_experience(state, action, save_next_state, reward, done)
+
+            #state = np.array(next_state)[0]
+            full_state = np.array(next_state)[0]
+
+            if env_tag == 'gym-go':     #STB: flatten state for go board
+                #state = mod_state(state)
+                state = mod_state(np.array(full_state))
+                
+                #print("hmmmm")
+                #print(state)
+                #print(save_state)
+            else:
+                state = full_state
+                pass
+            state = utils.to_tensor(state).unsqueeze(0)
+            #print("3", save_state[3])
+            #print("5", save_state[5])
+            if done == 1:
+                #print("done")
+                break
+
         if store_transition: self.num_games += 1
+
 
         return total_reward
 
@@ -133,6 +227,7 @@ class Agent:
         for net in self.pop:
             fitness = 0.0
             for eval in range(self.args.num_evals): fitness += self.evaluate(net, is_render=False, is_action_noise=False)
+            #print("net evaluated")
             all_fitness.append(fitness/self.args.num_evals)
 
         best_train_fitness = max(all_fitness)
@@ -173,10 +268,23 @@ if __name__ == "__main__":
     time_tracker = utils.Tracker(parameters, ['time_erl'], '_score.csv')
 
     #Create Env
-    env = utils.NormalizedActions(gym.make(env_tag))
-    parameters.action_dim = env.action_space.shape[0]
-    parameters.state_dim = env.observation_space.shape[0]
-
+    if env_tag == 'gym-go':
+        env = utils.NormalizedActions(gym.make('gym_go:go-v0', size=5, komi=0, reward_method='heuristic'))
+    else:
+        env = utils.NormalizedActions(gym.make(env_tag))
+        print("action space shape[0]: " + str(env.action_space.shape[0]))
+    print("action space (action_dim): " + str(env.action_space.n))
+    
+    #parameters.action_dim = env.action_space.shape[0]
+    if env_tag == 'gym-go':
+        parameters.action_dim = env.action_space
+        parameters.state_dim = 3 * env.observation_space.shape[1] * env.observation_space.shape[2] + 1
+    else:
+        parameters.action_dim = env.action_space.shape[0]
+        parameters.state_dim = env.observation_space.shape[0]
+    print("state_dim: " + str(env.observation_space.shape))
+    
+    parameters.env_tag = env_tag
     #Seed
     #env.seed(parameters.seed);
     torch.manual_seed(parameters.seed); np.random.seed(parameters.seed); random.seed(parameters.seed)
@@ -202,9 +310,6 @@ if __name__ == "__main__":
             next_save += 100
             if elite_index != None: torch.save(agent.pop[elite_index].state_dict(), parameters.save_foldername + 'evo_net')
             print("Progress Saved")
-
-
-
 
 
 

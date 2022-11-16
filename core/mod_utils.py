@@ -1,7 +1,8 @@
-
+from math import sqrt, ceil
 from torch.autograd import Variable
 import random, pickle
 import numpy as np, torch, os, gym
+
 
 class Tracker(): #Tracker
     def __init__(self, parameters, vars_string, project_string):
@@ -123,17 +124,48 @@ class SumTree:
 
 class NormalizedActions(gym.ActionWrapper):
 
-    def _action(self, action):
-        action = (action + 1) / 2  # [-1, 1] => [0, 1]
-        action *= (self.action_space.high - self.action_space.low)
-        action += self.action_space.low
+    def action(self, action):
+        if len(action > 1):
+            return self.interpret_action(action)
+        else:
+            action = (action + 1) / 2  # [-1, 1] => [0, 1]
+            action *= (self.action_space.high - self.action_space.low)
+            action += self.action_space.low
         return action
+    
+    def normalize(self, num):
+        #print("normalizing num: " + str(num))
+        num = (num + 1) / 2
+        return num
 
-    def _reverse_action(self, action):
+    def interpret_action(self,action):
+        actions = action.tolist()
+        size = ceil(sqrt(len(actions)-1))
+        #print(len(actions))
+        #print("size", size)
+        
+        #print("normalize")
+        actions = [self.normalize(x) for x in actions]
+        #print(actions)
+        #print(min(actions), max(actions))
+        #print(len(actions))
+        best_ind = np.argmax(actions)
+        #print(best_ind)
+        if best_ind == len(actions)-1:
+            out = None
+        else:
+            row_ind = int(best_ind//size)
+            col_ind = int(best_ind % size)
+            #print(best_ind, row_ind, col_ind)
+            out = (row_ind, col_ind)
+        #print("out", out)
+        return out
+
+    def reverse_action(self, action):
         action -= self.action_space.low
         action /= (self.action_space.high - self.action_space.low)
         action = action * 2 - 1
-        return actions
+        return action
 
 
 def fanin_init(size, fanin=None):

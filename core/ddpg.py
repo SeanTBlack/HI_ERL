@@ -25,6 +25,7 @@ class Actor(nn.Module):
         l1 = 128; l2 = 128; l3 = l2
 
         # Construct Hidden Layer 1
+        #print("state_dim " + str(args.state_dim))
         self.w_l1 = nn.Linear(args.state_dim, l1)
         if self.args.use_ln: self.lnorm1 = LayerNorm(l1)
 
@@ -34,7 +35,12 @@ class Actor(nn.Module):
 
 
         #Out
-        self.w_out = nn.Linear(l3, args.action_dim)
+        #print(args.action_dim)
+        #print(args.action_dim.n)
+        if args.env_tag == 'gym-go':
+            self.w_out = nn.Linear(l3, args.action_dim.n)
+        else:
+            self.w_out = nn.Linear(l3, args.action_dim)
 
         #Init
         if init:
@@ -46,6 +52,9 @@ class Actor(nn.Module):
     def forward(self, input):
 
         #Hidden Layer 1
+        #print("shape input: " + int(input.shape))
+        #print("input: " + str(input))
+        #print('input shape: ' + str(input.flatten.shape))
         out = self.w_l1(input)
         if self.args.use_ln: out = self.lnorm1(out)
         out = F.tanh(out)
@@ -59,6 +68,18 @@ class Actor(nn.Module):
         #Out
         out = F.tanh(self.w_out(out))
         return out
+    
+    def batch_forward(self, batch_in):
+        actions = []
+        #print("batch_forward")
+        for state in batch_in:
+            #print(state)
+            action = self.forward(state)
+            actions.append(action)
+        return actions
+
+
+
 
 
 class Critic(nn.Module):
@@ -71,7 +92,10 @@ class Critic(nn.Module):
 
         # Construct input interface (Hidden Layer 1)
         self.w_state_l1 = nn.Linear(args.state_dim, l1)
-        self.w_action_l1 = nn.Linear(args.action_dim, l1)
+        if args.env_tag == 'gym-go':
+            self.w_action_l1 = nn.Linear(args.action_dim.n, l1)
+        else:
+            self.w_action_l1 = nn.Linear(args.action_dim, l1)
 
         #Hidden Layer 2
         self.w_l2 = nn.Linear(2*l1, l2)
@@ -85,12 +109,20 @@ class Critic(nn.Module):
         if args.is_cuda: self.cuda()
 
     def forward(self, input, action):
+        
+        #print(input)
+        #print(action)
 
         #Hidden Layer 1 (Input Interface)
         out_state = F.elu(self.w_state_l1(input))
-        out_action = F.elu(self.w_action_l1(action))
-        out = torch.cat((out_state, out_action), 1)
-
+        out_action = F.elu(self.w_action_l1(action)) # STB: TODO May want to test if it makes a major difference to input the filtered action space (remove invalid actions) Default to NOT FILTERED in first tests.
+        
+        #print(out_state.size())
+        #print(out_action.size())
+        
+        #out = torch.cat((out_state, out_action), 1)
+        out = torch.cat((out_state, out_action), -1)
+        #print(out.size())
         # Hidden Layer 2
         out = self.w_l2(out)
         if self.args.use_ln: out = self.lnorm2(out)
@@ -100,7 +132,22 @@ class Critic(nn.Module):
         out = self.w_out(out)
 
         return out
+    def batch_forward(self, input_batch, action_batch):
+        q_list = []
 
+        #print(action_batch)
+        #print(type(action_batch))
+        #print(len(action_batch))
+        #print(action_batch[0])
+        #print(type(action_batch[0]))
+        #print(len(action_batch[0]))
+
+        for i in range(len(input_batch)):
+            
+            out = self.forward(input_batch[i], action_batch[i])
+            q_list.append(out)
+
+        return torch.cat(q_list)
 
 
 
@@ -108,6 +155,7 @@ class DDPG(object):
     def __init__(self, args):
 
         self.args = args
+        #print("AHHHHHH", self.args.state_dim)
 
         self.actor = Actor(args, init=True)
         self.actor_target = Actor(args, init=True)
@@ -125,6 +173,7 @@ class DDPG(object):
 
     def update_parameters(self, batch):
         state_batch = torch.cat(batch.state)
+        #print("next_state_batch", batch.next_state)
         next_state_batch = torch.cat(batch.next_state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
@@ -141,13 +190,21 @@ class DDPG(object):
 
 
         #Critic Update
-        next_action_batch = self.actor_target.forward(next_state_batch)
-        next_q = self.critic_target.forward(next_state_batch, next_action_batch)
+        #print("full_batch: ", next_state_batch)
+        #print("len full batch: ", len(next_state_batch))
+
+        #next_action_batch = self.actor_target.forward(next_state_batch)
+        next_action_batch = self.actor_target.batch_forward(batch.next_state)
+        #next_q = self.critic_target.forward(next_state_batch, next_action_batch)
+        #print("critic next")
+        next_q = self.critic_target.batch_forward(batch.next_state, next_action_batch)
         if self.args.use_done_mask: next_q = next_q * ( 1 - done_batch.float()) #Done mask
         target_q = reward_batch + (self.gamma * next_q)
 
         self.critic_optim.zero_grad()
-        current_q = self.critic.forward((state_batch), (action_batch))
+        #current_q = self.critic.forward((state_batch), (action_batch))
+        #print("\n critic curr")
+        current_q = self.critic.batch_forward(batch.state, batch.action)
         dt = self.loss(current_q, target_q)
         dt.backward()
         nn.utils.clip_grad_norm(self.critic.parameters(), 10)
@@ -189,12 +246,16 @@ class LayerNorm(nn.Module):
 
 class OUNoise:
 
-    def __init__(self, action_dimension, scale=0.3, mu=0, theta=0.15, sigma=0.2):
-        self.action_dimension = action_dimension
+    def __init__(self, action_dimension, env_tag, scale=0.3, mu=0, theta=0.15, sigma=0.2):
+        if env_tag == 'gym-go':
+            self.action_dimension = action_dimension.n
+        else:
+            self.action_dimension = action_dimension
         self.scale = scale
         self.mu = mu
         self.theta = theta
         self.sigma = sigma
+        #print(self.action_dimension)
         self.state = np.ones(self.action_dimension) * self.mu
         self.reset()
 
