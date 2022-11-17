@@ -64,8 +64,8 @@ class Parameters:
         else: self.num_frames = 2000000
 
         #USE CUDA
-        self.is_cuda = True; self.is_memory_cuda = True
-        #self.is_cuda = False; self.is_memory_cuda = False #STB
+        #self.is_cuda = True; self.is_memory_cuda = True
+        self.is_cuda = False; self.is_memory_cuda = False #STB
 
         #Sunchronization Period
         if env_tag == 'Hopper-v2' or env_tag == 'Ant-v2': self.synch_period = 1
@@ -79,6 +79,10 @@ class Parameters:
         self.buffer_size = 1000000
         self.frac_frames_train = 1.0
         self.use_done_mask = True
+        if env_tag == 'gym-go':
+            self.sample_type = 'HER'
+        else:
+            self.sample_type = None
 
         ###### NeuroEvolution Params ########
         #Num of trials
@@ -116,13 +120,16 @@ class Agent:
         print("init rl agent")
         #Init RL Agent
         self.rl_agent = ddpg.DDPG(args)
-        self.replay_buffer = replay_memory.ReplayMemory(args.buffer_size)
+        #if self.args.replay_strategy == 'HER':
+        #    self.replay_buffer = replay_memory.her_sampler()
+        #elif self.args.replay_strategy == 'standard':
+        self.replay_buffer = replay_memory.ReplayMemory(args.buffer_size, self.args.sample_type)
         self.ounoise = ddpg.OUNoise(args.action_dim, env_tag=env_tag)
 
         #Trackers
         self.num_games = 0; self.num_frames = 0; self.gen_frames = None; self.total_wins = 0; self.taylor_score = []
 
-    def add_experience(self, state, action, next_state, reward, done):
+    def add_experience(self, state, action, next_state, reward, done, won):
         reward = utils.to_tensor(np.array([reward])).unsqueeze(0)
         if self.args.is_cuda: reward = reward.cuda()
         if self.args.use_done_mask:
@@ -130,7 +137,7 @@ class Agent:
             if self.args.is_cuda: done = done.cuda()
         action = utils.to_tensor(action)
         if self.args.is_cuda: action = action.cuda()
-        self.replay_buffer.push(state, action, next_state, reward, done)
+        self.replay_buffer.push(state, action, next_state, reward, done, won)
 
     def evaluate(self, net, is_render, is_action_noise=False, store_transition=True):
         total_reward = 0.0
@@ -196,7 +203,11 @@ class Agent:
 
             #if store_transition: self.add_experience(save_state, action, next_state, reward, done)
             #if store_transition: self.add_experience(state, action, next_state, reward, done)
-            if store_transition: self.add_experience(state, action, save_next_state, reward, done)
+            if final_stats != None: 
+                won = final_stats[0]
+            else:
+                won = None
+            if store_transition: self.add_experience(state, action, save_next_state, reward, done, won)
 
             #state = np.array(next_state)[0]
             if self.args.is_cuda:
@@ -280,6 +291,7 @@ class Agent:
 
         #DDPG learning step
         if len(self.replay_buffer) > self.args.batch_size * 5:
+            print("range", self.gen_frames, "*", self.args.frac_frames_train)
             for _ in range(int(self.gen_frames*self.args.frac_frames_train)):
                 transitions = self.replay_buffer.sample(self.args.batch_size)
                 batch = replay_memory.Transition(*zip(*transitions))
@@ -295,6 +307,7 @@ class Agent:
 
 if __name__ == "__main__":
     parameters = Parameters()  # Create the Parameters class
+
     tracker = utils.Tracker(parameters, ['erl'], '_score.csv')  # Initiate tracker
     frame_tracker = utils.Tracker(parameters, ['frame_erl'], '_score.csv')  # Initiate tracker
     time_tracker = utils.Tracker(parameters, ['time_erl'], '_score.csv')
