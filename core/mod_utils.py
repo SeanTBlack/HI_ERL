@@ -16,6 +16,10 @@ class Tracker(): #Tracker
 
 
     def update(self, updates, generation):
+        #print("update")
+        #print(updates, generation)
+        #print(self.all_tracker)
+        
         self.counter += 1
         for update, var in zip(updates, self.all_tracker):
             if update == None: continue
