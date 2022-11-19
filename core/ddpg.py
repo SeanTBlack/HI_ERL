@@ -176,8 +176,11 @@ class DDPG(object):
         #print("next_state_batch", batch.next_state)
         next_state_batch = torch.cat(batch.next_state)
         action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-        if self.args.use_done_mask: done_batch = torch.cat(batch.done)
+        #reward_batch = torch.cat(batch.reward)
+        reward_batch = torch.Tensor(batch.reward)
+        #if self.args.use_done_mask: done_batch = torch.cat(batch.done)
+        if self.args.use_done_mask: 
+            done_batch = torch.FloatTensor(batch.done)
         state_batch.volatile = False; next_state_batch.volatile = True; action_batch.volatile = False
 
         #Load everything to GPU if not already
@@ -198,7 +201,10 @@ class DDPG(object):
         #next_q = self.critic_target.forward(next_state_batch, next_action_batch)
         #print("critic next")
         next_q = self.critic_target.batch_forward(batch.next_state, next_action_batch)
-        if self.args.use_done_mask: next_q = next_q * ( 1 - done_batch.float()) #Done mask
+        #if self.args.use_done_mask: next_q = next_q * ( 1 - done_batch.float()) #Done mask
+        #print(done_batch)
+        #print(type(done_batch))
+        if self.args.use_done_mask: next_q = next_q * ( 1 - done_batch) #Done mask
         target_q = reward_batch + (self.gamma * next_q)
 
         self.critic_optim.zero_grad()

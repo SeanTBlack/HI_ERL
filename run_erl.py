@@ -7,6 +7,8 @@ from core import ddpg as ddpg
 import argparse
 import copy
 from itertools import chain
+from core import replay_buffer
+from core.her import her_sampler
 #import gym_go #stb - Not sure if this is needed
 
 
@@ -81,6 +83,9 @@ class Parameters:
         self.use_done_mask = True
         if env_tag == 'gym-go':
             self.sample_type = 'HER'
+            self.replay_k = 4
+            self.replay_strategy = ''
+            self.reward_type = 'real'
         else:
             self.sample_type = None
 
@@ -120,10 +125,15 @@ class Agent:
         print("init rl agent")
         #Init RL Agent
         self.rl_agent = ddpg.DDPG(args)
-        #if self.args.replay_strategy == 'HER':
-        #    self.replay_buffer = replay_memory.her_sampler()
+        self.experiences = {'state': [], 'action': [], 'next_state': [], 'r': [], 'd': []}
+        if self.args.sample_type == 'HER':
+            # her sampler
+            #self.her_module = her_sampler(self.args.replay_strategy, self.args.replay_k)
+            # create the replay buffer
+            self.replay_buffer = replay_buffer.replay_buffer(self.args.buffer_size)
         #elif self.args.replay_strategy == 'standard':
-        self.replay_buffer = replay_memory.ReplayMemory(args.buffer_size, self.args.sample_type)
+        else:
+            self.replay_buffer = replay_memory.ReplayMemory(self.args.buffer_size, self.args.sample_type, self.args.reward_type)
         self.ounoise = ddpg.OUNoise(args.action_dim, env_tag=env_tag)
 
         #Trackers
@@ -138,6 +148,23 @@ class Agent:
         action = utils.to_tensor(action)
         if self.args.is_cuda: action = action.cuda()
         self.replay_buffer.push(state, action, next_state, reward, done, won)
+
+    def add_her_experience(self, state, action, next_state, reward, done, won):
+        if type(action) == 'torch.Tensor':
+            print('a', action)
+        self.experiences['state'].append(state)
+        self.experiences['action'].append(utils.to_tensor(action))
+        self.experiences['next_state'].append(next_state)
+        self.experiences['r'].append(reward)
+        self.experiences['d'].append(done)
+        #.append([state, next_state, action, reward])
+        if done == 1:
+            self.replay_buffer.store_episode((self.experiences['state'],
+                                            self.experiences['next_state'],
+                                            self.experiences['action'],
+                                            self.experiences['r'],
+                                            self.experiences['d'],
+                                            won))
 
     def evaluate(self, net, is_render, is_action_noise=False, store_transition=True):
         total_reward = 0.0
@@ -207,7 +234,8 @@ class Agent:
                 won = final_stats[0]
             else:
                 won = None
-            if store_transition: self.add_experience(state, action, save_next_state, reward, done, won)
+            #if store_transition: self.add_experience(state, action, save_next_state, reward, done, won)
+            if store_transition: self.add_her_experience(state, action, save_next_state, reward, done, won)
 
             #state = np.array(next_state)[0]
             if self.args.is_cuda:
@@ -265,6 +293,7 @@ class Agent:
             fitness = 0.0
             for eval in range(self.args.num_evals): 
                 fit = self.evaluate(net, is_render=False, is_action_noise=False)
+                self.experiences = {'state': [], 'action': [], 'next_state': [], 'r': [], 'd': []}
                 fitness += fit
             #print("net evaluated")
             all_fitness.append(fitness/self.args.num_evals)
@@ -278,6 +307,7 @@ class Agent:
         
         for eval in range(5): 
             test_rew = self.evaluate(self.pop[champ_index], is_render=True, is_action_noise=False, store_transition=False)
+            self.experiences = {'state': [], 'action': [], 'next_state': [], 'r': [], 'd': []}
             test_score += test_rew/5
             #taylor_score.append(taylor_rew/5)
 
@@ -288,9 +318,10 @@ class Agent:
         ####################### DDPG #########################
         #DDPG Experience Collection
         self.evaluate(self.rl_agent.actor, is_render=False, is_action_noise=True) #Train
+        self.experiences = {'state': [], 'action': [], 'next_state': [], 'r': [], 'd': []}
 
         #DDPG learning step
-        if len(self.replay_buffer) > self.args.batch_size * 5:
+        if self.replay_buffer.n_transitions_stored > self.args.batch_size * 5:
             print("range", self.gen_frames, "*", self.args.frac_frames_train)
             for _ in range(int(self.gen_frames*self.args.frac_frames_train)):
                 transitions = self.replay_buffer.sample(self.args.batch_size)
@@ -316,7 +347,7 @@ if __name__ == "__main__":
 
     #Create Env
     if env_tag == 'gym-go':
-        env = utils.NormalizedActions(gym.make('gym_go:go-v0', size=5, komi=0, reward_method='heuristic'))
+        env = utils.NormalizedActions(gym.make('gym_go:go-v0', size=5, komi=0, reward_method=parameters.reward_type))
     else:
         env = utils.NormalizedActions(gym.make(env_tag))
         print("action space shape[0]: " + str(env.action_space.shape[0]))

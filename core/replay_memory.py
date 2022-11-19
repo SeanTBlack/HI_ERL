@@ -6,12 +6,13 @@ import numpy as np
 # https://github.com/pytorch/tutorials/blob/master/Reinforcement%20(Q-)Learning%20with%20PyTorch.ipynb
 
 Transition = namedtuple(
-    'Transition', ('state', 'action', 'next_state', 'reward', 'done', 'won'))
+    'Transition', ('state', 'action', 'next_state', 'reward', 'done'))
+    #'Transition', ('state', 'action', 'next_state', 'reward', 'done', 'won'))
 
 
 class ReplayMemory(object):
 
-    def __init__(self, capacity, sample_type):
+    def __init__(self, capacity, sample_type, reward_type):
         self.capacity = capacity
         self.memory = []
         #self.memory = {'state': [],
@@ -21,6 +22,7 @@ class ReplayMemory(object):
         #                'done': []}
         self.position = 0
         self.sample_type = sample_type
+        self.reward_type = reward_type
 
         #if self.sample_type == 'HER':
         #    self.her_module = her_sampler(replay_strategy='final', replay_k=6)
@@ -53,6 +55,11 @@ class ReplayMemory(object):
         for mem in self.memory:
             if mem == None:
                 print("none??")
+        
+        
+        #batch = random.sample(self.memory, batch_size)
+
+
         return random.sample(self.memory, batch_size)
 
     def __len__(self):
