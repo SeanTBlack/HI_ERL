@@ -62,12 +62,12 @@ class Parameters:
         if env_tag == 'Hopper-v2': self.num_frames = 4000000
         elif env_tag == 'Ant-v2': self.num_frames = 6000000
         elif env_tag == 'Walker2d-v2': self.num_frames = 8000000
-        elif env_tag ==  'gym-go': self.num_frames = 250000
+        elif env_tag ==  'gym-go': self.num_frames = 8000000
         else: self.num_frames = 2000000
 
         #USE CUDA
-        #self.is_cuda = True; self.is_memory_cuda = True
-        self.is_cuda = False; self.is_memory_cuda = False #STB
+        self.is_cuda = True; self.is_memory_cuda = True
+        #self.is_cuda = False; self.is_memory_cuda = False #STB
 
         #Sunchronization Period
         if env_tag == 'Hopper-v2' or env_tag == 'Ant-v2': self.synch_period = 1
@@ -85,7 +85,7 @@ class Parameters:
             self.sample_type = 'HER'
             self.replay_k = 4
             self.replay_strategy = ''
-            self.reward_type = 'real'
+            self.reward_type = 'heuristic'
         else:
             self.sample_type = None
 
@@ -150,8 +150,8 @@ class Agent:
         self.replay_buffer.push(state, action, next_state, reward, done, won)
 
     def add_her_experience(self, state, action, next_state, reward, done, won):
-        if type(action) == 'torch.Tensor':
-            print('a', action)
+        #if type(action) == 'torch.Tensor':
+        #    print('a', action)
         self.experiences['state'].append(state)
         self.experiences['action'].append(utils.to_tensor(action))
         self.experiences['next_state'].append(next_state)
@@ -380,6 +380,7 @@ if __name__ == "__main__":
                                                               '%.2f' % (agent.evolver.selection_stats['discarded'] / agent.evolver.selection_stats['total']))
         print()
         tracker.update([erl_score], agent.num_games)
+        #print('erl', erl_score, 'num games', agent.num_games)
         frame_tracker.update([erl_score], agent.num_frames)
         time_tracker.update([erl_score], time.time()-time_start)
         #print("win_tracker")
@@ -392,6 +393,9 @@ if __name__ == "__main__":
             next_save += 100
             if elite_index != None: torch.save(agent.pop[elite_index].state_dict(), parameters.save_foldername + 'evo_net')
             print("Progress Saved")
+        
+        with open("R_ERL/selection_rate.txt", 'w') as f:
+            f.write(str(agent.evolver.selection_stats['elite']) + ", " + str(agent.evolver.selection_stats['selected']) + ", " + str(agent.evolver.selection_stats['discarded']))
 
 
 #def update_win_tracker()

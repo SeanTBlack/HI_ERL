@@ -23,7 +23,7 @@ class her_sampler:
         episode_idxs = np.random.randint(0, rollout_batch_size, batch_size)
         t_samples = np.random.randint(T, size=batch_size)
         #print(type(episode_batch))
-        for key in episode_batch.keys(): print(type(episode_batch[key]))
+        #for key in episode_batch.keys(): print(type(episode_batch[key]))
         #print(episode_batch['obs'][0])
         #transitions = {key: np.array(episode_batch)[key][episode_idxs, t_samples].copy() for key in episode_batch.keys()}
         transitions = {key: np.array(episode_batch[key])[episode_idxs].copy() for key in episode_batch.keys()}

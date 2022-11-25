@@ -52,9 +52,9 @@ class ReplayMemory(object):
             return self.sample_func(self.memory, batch_size)
         """
         #print("sample")
-        for mem in self.memory:
-            if mem == None:
-                print("none??")
+        #for mem in self.memory:
+        #    if mem == None:
+        #        print("none??")
         
         
         #batch = random.sample(self.memory, batch_size)
@@ -78,8 +78,8 @@ class her_sampler:
     def sample_her_transitions(self, episode_batch, batch_size_in_transitions):
         #print(episode_batch)
         #print(type(episode_batch))
-        print(episode_batch[0])
-        print(episode_batch[0][1])
+        #print(episode_batch[0])
+        #print(episode_batch[0][1])
         #print(type(episode_batch[0]))
         T = episode_batch['actions'].shape[1]
         rollout_batch_size = episode_batch['actions'].shape[0]
