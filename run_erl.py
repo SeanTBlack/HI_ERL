@@ -52,6 +52,9 @@ def filter_actions(action, invalid):
     
     return np.array([action])
 
+def NS_fitness(fitness, num_frames):
+    
+
 
 class Parameters:
     def __init__(self):
@@ -60,7 +63,7 @@ class Parameters:
         if env_tag == 'Hopper-v2': self.num_frames = 4000000
         elif env_tag == 'Ant-v2': self.num_frames = 6000000
         elif env_tag == 'Walker2d-v2': self.num_frames = 8000000
-        elif env_tag ==  'gym-go': self.num_frames = 250000
+        elif env_tag ==  'gym-go': self.num_frames = 25000
         else: self.num_frames = 2000000
 
         #USE CUDA
@@ -256,6 +259,7 @@ class Agent:
                 fit = self.evaluate(net, is_render=False, is_action_noise=False)
                 fitness += fit
             #print("net evaluated")
+            fitness = NS_fitness(fitness, self.num_frames)
             all_fitness.append(fitness/self.args.num_evals)
 
         best_train_fitness = max(all_fitness)
