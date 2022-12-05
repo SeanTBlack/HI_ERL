@@ -60,7 +60,7 @@ class Parameters:
         if env_tag == 'Hopper-v2': self.num_frames = 4000000
         elif env_tag == 'Ant-v2': self.num_frames = 6000000
         elif env_tag == 'Walker2d-v2': self.num_frames = 8000000
-        elif env_tag ==  'gym-go': self.num_frames = 25000
+        elif env_tag ==  'gym-go': self.num_frames = 8000000
         else: self.num_frames = 2000000
 
         #USE CUDA
@@ -303,7 +303,7 @@ if __name__ == "__main__":
 
     #Create Env
     if env_tag == 'gym-go':
-        env = utils.NormalizedActions(gym.make('gym_go:go-v0', size=5, komi=0, reward_method='real'))
+        env = utils.NormalizedActions(gym.make('gym_go:go-v0', size=10, komi=0, reward_method='real'))
     else:
         env = utils.NormalizedActions(gym.make(env_tag))
         print("action space shape[0]: " + str(env.action_space.shape[0]))
