@@ -7,6 +7,7 @@ from core import ddpg as ddpg
 import argparse
 import copy
 from itertools import chain
+from scipy.spatial import distance
 #import gym_go #stb - Not sure if this is needed
 
 
@@ -17,43 +18,61 @@ env_tag = vars(parser.parse_args())['env']
 
 def mod_state(state):
 
-    #print("mod_state: \n", state)
     black_state = state[0]
-    #print(black_state)
     black_list = list(chain.from_iterable(black_state))
-
     white_state = state[1]
-    #print(white_state)
     white_list = list(chain.from_iterable(white_state))
-
     inv_states = state[3]
-    #print(inv_states)
     inv_list = list(chain.from_iterable(inv_states))
-
     opp_passed = state[4][0][0]
 
     return np.array(black_list + white_list + inv_list + [opp_passed])
 
 def filter_actions(action, invalid):
-    #print("filtering")
-    #print(len(action[0]))
+
     invalid = list(chain.from_iterable(invalid))
-    # invalid = [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] #STB: Testing the filter
     action = action.tolist()[0]
-    #print(len(action))
-    #print("filtering\n", invalid)
-    #action = [-1 if invalid[i] == 1 else action[i] ]
     for i in range(len(action)-1):
         if invalid[i] == 1:
             action[i] = -2
-        
-    #print(action)
-    #print(len(action))
     
     return np.array([action])
 
-def NS_fitness(fitness, num_frames):
+class NS_datastore:
+    def __init__(self):
+        self.insert_prob = 0.02
+        self.max_size = 10000
+        self.k = 25
+        self.ds = []
     
+    def get_novelty(self, bc):
+        k_nearest = []
+        distances = []
+        for x in self.ds:
+            distances.append(distance.euclidean(bc, x))
+        distances.sort()
+
+        if len(self.ds) == 0:
+            novelty = 1
+        elif len(self.ds) <= self.k:
+            novelty = np.mean(distances)
+        else: 
+            novelty = np.mean(distances[-self.k:])
+
+        self.add_to_datastore(bc)
+        #print("size of ds:", len(self.ds))
+        return novelty
+
+    def add_to_datastore(self, bc):
+        if len(self.ds) >= self.max_size and random.random() < self.insert_prob:
+            i = random.randint(0,self.max_size-1)
+            self.ds[i] = bc
+        elif len(self.ds) <= self.k:
+            self.ds.append(bc)
+        else:
+            if random.random() < self.insert_prob:
+                self.ds.append(bc)
+        
 
 
 class Parameters:
@@ -67,8 +86,8 @@ class Parameters:
         else: self.num_frames = 2000000
 
         #USE CUDA
-        self.is_cuda = True; self.is_memory_cuda = True
-        #self.is_cuda = False; self.is_memory_cuda = False #STB
+        #self.is_cuda = True; self.is_memory_cuda = True
+        self.is_cuda = False; self.is_memory_cuda = False #STB
 
         #Sunchronization Period
         if env_tag == 'Hopper-v2' or env_tag == 'Ant-v2': self.synch_period = 1
@@ -105,7 +124,7 @@ class Parameters:
         if not os.path.exists(self.save_foldername): os.makedirs(self.save_foldername)
 
 class Agent:
-    def __init__(self, args, env):
+    def __init__(self, args, env, datastore):
         self.args = args; self.env = env
         self.evolver = utils_ne.SSNE(self.args)
         print("init pop")
@@ -121,6 +140,7 @@ class Agent:
         self.rl_agent = ddpg.DDPG(args)
         self.replay_buffer = replay_memory.ReplayMemory(args.buffer_size)
         self.ounoise = ddpg.OUNoise(args.action_dim, env_tag=env_tag)
+        self.datastore = datastore
 
         #Trackers
         self.num_games = 0; self.num_frames = 0; self.gen_frames = None; self.total_wins = 0; self.taylor_score = []
@@ -138,21 +158,14 @@ class Agent:
     def evaluate(self, net, is_render, is_action_noise=False, store_transition=True):
         total_reward = 0.0
 
-        #print("evaluate")
-
-        #save_state = self.env.reset()
-        #state = self.env.reset()
         full_state = self.env.reset()
         if env_tag == 'gym-go':     #STB: flatten state for go board
-            #state = mod_state(save_state)
-            #state = mod_state(state)
             state = mod_state(np.array(full_state))
         else:
             state = full_state
-            pass
 
         state = utils.to_tensor(state).unsqueeze(0)
-        #print(state)
+
         if self.args.is_cuda: state = state.cuda()
         done = False
 
@@ -168,20 +181,12 @@ class Agent:
             action = utils.to_numpy(action.cpu())
             
             if is_action_noise: action += self.ounoise.noise()
-            #print("save", save_state)
+
             if env_tag == 'gym-go': 
-                #action = filter_actions(action, save_state[3]) #STB: Filtering invalid moves will save time in training
-                #action = filter_actions(action, state[3]) #STB: Filtering invalid moves will save time in training
                 action = filter_actions(action, full_state[3]) #STB: Filtering invalid moves will save time in training
-            #print("action", action)
-            #print(type(action))
-            
 
             next_state, reward, done, info, final_stats = self.env.step(action.flatten())  #Simulate one step in environment
-            
-            
-            #print("done?", save_state[5])
-            #print("\n")
+
             save_next_state = copy.deepcopy(next_state)
             next_state = utils.to_tensor(next_state).unsqueeze(0)
             if self.args.is_cuda:
@@ -195,52 +200,58 @@ class Agent:
                 state = state.cuda()
             else:
                 save_next_state = utils.to_tensor(mod_state(save_next_state))
-            #print(save_next_state)
 
-            #if store_transition: self.add_experience(save_state, action, next_state, reward, done)
-            #if store_transition: self.add_experience(state, action, next_state, reward, done)
             if store_transition: self.add_experience(state, action, save_next_state, reward, done)
 
-            #state = np.array(next_state)[0]
+
             if self.args.is_cuda:
                 full_state = np.array(next_state.cpu())[0]
             else:
                 full_state = np.array(next_state)[0]
 
             if env_tag == 'gym-go':     #STB: flatten state for go board
-                #state = mod_state(state)
                 state = mod_state(np.array(full_state))
-                
-                #print("hmmmm")
-                #print(state)
-                #print(save_state)
             else:
                 state = full_state
-                pass
+
             state = utils.to_tensor(state).unsqueeze(0)
-            #print("3", save_state[3])
-            #print("5", save_state[5])
+
             if done == 1:
-                #print("done")
-                
-                #print(final_stats[0])
-                
                 break
 
         if store_transition: 
             self.num_games += 1
-            #if final_stats[0] == 1:
+
             if final_stats[0] == 1:
                 self.total_wins += 1
             self.taylor_score.append(final_stats[1])
-            
-            # taylor_score = final_stats[1]
-        #else:
-            #taylor_score = 0
 
+        fitness = self.get_fitness(utils.to_numpy(state), total_reward)
 
-        #return total_reward, taylor_score
-        return total_reward
+        #return total_reward
+        return fitness
+    
+    def get_fitness(self, state, reward):
+        min_expl = 0.25
+        max_expl = 0.75
+        max_frames = 25000
+        explore_range = (max_frames*min_expl, max_frames*max_expl)
+
+        novelty = self.datastore.get_novelty(state)
+        
+        if self.num_frames < explore_range[0]:
+            fitness = novelty
+        
+        elif explore_range[0] <= self.num_frames < explore_range[1]:
+            relative_gen = explore_range[1] - explore_range[0]
+            gen = self.num_frames - (max_frames*min_expl)
+
+            fitness = (gen/relative_gen) * reward + (1-(gen/relative_gen)) * novelty
+        
+        else:
+            fitness = reward
+
+        return fitness
 
     def rl_to_evo(self, rl_net, evo_net):
         for target_param, param in zip(evo_net.parameters(), rl_net.parameters()):
@@ -258,8 +269,8 @@ class Agent:
             for eval in range(self.args.num_evals): 
                 fit = self.evaluate(net, is_render=False, is_action_noise=False)
                 fitness += fit
-            #print("net evaluated")
-            fitness = NS_fitness(fitness, self.num_frames)
+
+            #fitness = NS_fitness(fitness, self.num_frames)
             all_fitness.append(fitness/self.args.num_evals)
 
         best_train_fitness = max(all_fitness)
@@ -272,7 +283,6 @@ class Agent:
         for eval in range(5): 
             test_rew = self.evaluate(self.pop[champ_index], is_render=True, is_action_noise=False, store_transition=False)
             test_score += test_rew/5
-            #taylor_score.append(taylor_rew/5)
 
         #NeuroEvolution's probabilistic selection and recombination step
         elite_index = self.evolver.epoch(self.pop, all_fitness)
@@ -313,7 +323,6 @@ if __name__ == "__main__":
         print("action space shape[0]: " + str(env.action_space.shape[0]))
     print("action space (action_dim): " + str(env.action_space.n))
     
-    #parameters.action_dim = env.action_space.shape[0]
     if env_tag == 'gym-go':
         parameters.action_dim = env.action_space
         parameters.state_dim = 3 * env.observation_space.shape[1] * env.observation_space.shape[2] + 1
@@ -324,11 +333,13 @@ if __name__ == "__main__":
     
     parameters.env_tag = env_tag
     #Seed
-    #env.seed(parameters.seed);
     torch.manual_seed(parameters.seed); np.random.seed(parameters.seed); random.seed(parameters.seed)
-    print("Create Agent")
+
+    #Create Novelty Search Datastore
+    datastore = NS_datastore()
+
     #Create Agent
-    agent = Agent(parameters, env)
+    agent = Agent(parameters, env, datastore)
     print('Running', env_tag, ' State_dim:', parameters.state_dim, ' Action_dim:', parameters.action_dim)
 
     next_save = 100; time_start = time.time()
@@ -342,9 +353,7 @@ if __name__ == "__main__":
         tracker.update([erl_score], agent.num_games)
         frame_tracker.update([erl_score], agent.num_frames)
         time_tracker.update([erl_score], time.time()-time_start)
-        #print("win_tracker")
-        #print(agent.total_wins)
-        #print(np.mean(agent.taylor_score))
+
         win_tracker.update([erl_score], agent.total_wins)
         taylor_tracker.update([erl_score], np.mean(agent.taylor_score))
         #Save Policy
@@ -353,6 +362,8 @@ if __name__ == "__main__":
             if elite_index != None: torch.save(agent.pop[elite_index].state_dict(), parameters.save_foldername + 'evo_net')
             print("Progress Saved")
 
+        with open("R_ERL/selection_rate.txt", 'w') as f:
+            f.write(str(agent.evolver.selection_stats['elite']) + ", " + str(agent.evolver.selection_stats['selected']) + ", " + str(agent.evolver.selection_stats['discarded']))
 
 #def update_win_tracker()
 
