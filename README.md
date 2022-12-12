@@ -1,4 +1,4 @@
-###### Dependencies #######
+#### Dependencies ####
 Python 3.6.8 \
 Pytorch 0.3.1.post3 \
 Numpy 1.15.2 \
@@ -6,7 +6,7 @@ Fastrand from https://github.com/lemire/fastrand \
 Gym 0.10.5 \
 Mujoco-py v1.50.1.59
 
-###### Install process:  #######
+#### Install process:  #####
 $conda create -n HIERL \
 $conda install python==3.6.8 \
 $conda install pytorch==1.2.0 torchvision==0.4.0 -c pytorch \
