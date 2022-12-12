@@ -18,11 +18,11 @@ Setup mujoco-py: \
 $git clone https://github.com/openai/mujoco-py.git \
 $cd mujoco-py \
 $python setup.py install \
-Fastrand from https://github.com/lemire/fastrand \
+Fastrand from https://github.com/lemire/fastrand 
 
 Setup gym-go:
-$git clone https://github.com/SeanTBlack/GymGo.git
-$cd GymGo
+$git clone https://github.com/SeanTBlack/GymGo.git \
+$cd GymGo \
 $pip install -e .
 
 #### To Run #### 
@@ -32,6 +32,6 @@ python run_erl.py -env $ENV_NAME$
 gym-go
 
 #### Algorithms Implemented #### 
-Algorithm Name          Branch
-ERL                 |   go_noHER
-NS-ERL              |   go_NS
+Algorithm Name          Branch \
+ERL                 |   go_noHER \
+NS-ERL              |   go_NS \
