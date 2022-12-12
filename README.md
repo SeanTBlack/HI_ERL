@@ -12,6 +12,7 @@ $conda install python==3.6.8 \
 $conda install pytorch==1.2.0 torchvision==0.4.0 -c pytorch \
 $conda install numpy==1.19.5 \
 $pip install gym==0.15.6 \
+$pip install -U kaleido
  
 Setup mujoco-py: \
 $git clone https://github.com/openai/mujoco-py.git \
@@ -29,3 +30,8 @@ python run_erl.py -env $ENV_NAME$
 
 #### ENVS TESTED #### 
 gym-go
+
+#### Algorithms Implemented #### 
+Algorithm Name          Branch
+ERL                 |   go_noHER
+NS-ERL              |   go_NS
