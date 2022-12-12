@@ -34,4 +34,4 @@ gym-go
 #### Algorithms Implemented #### 
 Algorithm Name          Branch \
 ERL                 |   go_noHER \
-NS-ERL              |   go_NS \
+NS-ERL              |   go_NS 
